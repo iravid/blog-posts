@@ -1,5 +1,5 @@
 #+TITLE: On encoders, contravariant functors and contravariant applicatives
-#+DATE: 2017-11-2
+#+DATE: 2017-11-10
 
 Functors and applicatives are very common in the functional programming
 landscape. They arise naturally in various computational contexts - optionality
@@ -12,15 +12,15 @@ the context - ~Option[A] => Option[B]~. That is the essential meaning of having
 an instance of ~Functor~: the ability to lift ordinary functions to fancy
 functions that operate in a special context.
 
-We'll use this data type throughout the post:
-#+BEGIN_SRC tut
+We'll use these data types throughout the post:
+#+BEGIN_SRC tut:silent
   case class Username(name: String)
   case class UserId(id: Int)
   case class User(id: UserId, name: Username)
 #+END_SRC
 
 Here's a short example to illustrate this, using ~cats~ and ~cats-effect~:
-#+BEGIN_SRC tut
+#+BEGIN_SRC tut:silent
   import cats.effect.IO
 
   trait DB {
@@ -35,15 +35,15 @@ Here's a short example to illustrate this, using ~cats~ and ~cats-effect~:
 Our ~DB~ interface only provides an ~IO[Int]~ output; it has no knowledge of our
 ~UserId~ data type. Luckily, since ~IO~ has a ~Functor~ instance, we can lift
 the ~UserId.apply~ function, and compose it with ~DB.retrieveInt~:
-#+BEGIN_SRC tut
+#+BEGIN_SRC tut:book
   import cats.implicits._, cats.effect.implicits._
   import cats.Functor
 
-  val original: Int => UserId = UserId(_)
+  val original = UserId(_)
 
-  val lifted: IO[Int] => IO[UserId] = Functor[IO].lift(original)
+  val lifted = Functor[IO].lift(original)
 
-  val retrievedUserId: IO[UserId] = lifted(testDB.retrieveInt())
+  val retrievedUserId = lifted(testDB.retrieveInt())
 #+END_SRC
 
 The essence of being able to ~lift~ ordinary functions means that having a
@@ -59,7 +59,7 @@ post. The decoder type, ~Reads[A]~, is morally equivalent to a function:
 
 A JSON decoder receives a ~String~ and returns a possible error value. We can
 write a functor for his data type:
-#+BEGIN_SRC tut
+#+BEGIN_SRC tut:silent
   import play.api.libs.json._
 
   implicit val decoderFunctor = new Functor[Reads] {
@@ -73,13 +73,13 @@ write a functor for his data type:
 You'll notice that we just reused the fact that ~JsResult[A]~ has a ~Functor~
 instance. Now, going back to our original example of ~String~ and ~UserId~, we
 can parse a ~UserId~ given a ~Reads[String]~ and a ~String => UserId~:
-#+BEGIN_SRC tut
-  val idDecoder: Reads[UserId] = Reads.of[Int].map(UserId(_))
+#+BEGIN_SRC tut:book
+  val idDecoder = Reads.of[Int].map(UserId(_))
 #+END_SRC
 
 What happens when we need to combine two parsed values?
-#+BEGIN_SRC tut
-  val nameDecoder: Reads[Username] = Reads.of[String].map(Username(_))
+#+BEGIN_SRC tut:book
+  val nameDecoder = Reads.of[String].map(Username(_))
 #+END_SRC
 
 We have a function ~(UserId, Username) => User~, and two instances of
@@ -95,11 +95,11 @@ typeclass. ~cats~ doesn't provide the ~lift2~ function directly, but we have
 
 The ~Applicative~ instance for ~Reads~ is available in [[https://github.com/iravid/play-json-cats][play-json-cats]] so we'll
 elide it for brevity, but let's see how ~map2~ is used:
-#+BEGIN_SRC tut
+#+BEGIN_SRC tut:book
   import cats.Applicative
   import com.iravid.playjsoncats.implicits._
 
-  val userDecoder: Reads[User] = Applicative[Reads].map2(idDecoder, nameDecoder)(User(_, _))
+  val userDecoder = Applicative[Reads].map2(idDecoder, nameDecoder)(User(_, _))
 #+END_SRC
 
 Let's now consider the dual of ~Reads~: ~Writes~. This, too, is just a glorified
@@ -112,7 +112,7 @@ can't have a regular ~Functor~ for this.
 But if we have a function that *produces* an ~A~, we can pre-compose it with the
 encoder. Let's try to develop an intuition for what we can do with this through
 an example with a simplified ~Writes~ definition:
-#+BEGIN_SRC tut
+#+BEGIN_SRC tut:silent
   type PseudoWrites[A] = A => String
 
   val stringWrites: PseudoWrites[Int] = _.toString
@@ -133,7 +133,7 @@ This notion is encoded in the contravariant functor typeclass:
   }
 
   // specialized for Reads:
-  def contramap[A, B](fa: Reads[A])(f: B => A): Reads[B] = ???
+  def contramap[A, B](fa: Reads[A])(f: B => A): Reads[B]
 #+END_SRC
 
 If we flip the argument order and curry the arguments, we can get something
@@ -150,7 +150,7 @@ How is this useful, you ask? Well, libraries such as ~play-json~ usually come
 preloaded with encoders and decoders for the primitive types. Using the
 contravariant functor, we can succinctly derive an encoder for a wrapper type
 (again using [[https://github.com/iravid/play-json-cats/][play-json-cats]]):
-#+BEGIN_SRC tut
+#+BEGIN_SRC tut:silent
   val intWrites = Writes.of[Int]
   val userIdWrites: Writes[UserId] = intWrites.contramap(_.id)
 
@@ -167,8 +167,8 @@ Let's see what's the signature we're looking for:
 def contramap2(fa: JsEncoder[UserId], fb: JsEncoder[Username])(f: User => (UserId, Username)): JsEncoder[User]
 #+END_SRC
 
-The typeclass that describes this operation is called ~Divide~; here's how
-it looks like:
+The typeclass that describes this operation is called ~Divide~, originating in
+Edward Kmett's [[https://hackage.haskell.org/package/contravariant/][contravariant]] package; here's how it looks like in Scala:
 #+BEGIN_SRC scala
   trait Divide[F[_]] extends Contravariant[F] {
     def divide[A, B, C](fb: F[A], fc: F[B])(f: C => (A, B)): F[C]
@@ -182,7 +182,7 @@ a ~UserId~ and a ~Username~).
 This typeclass not available in cats [[HTTps://github.com/typelevel/cats/issues/1935][yet]], but we do have ~contramap~
 available on the cartesian builders, which acts as ~divide~; we just need an
 instance of ~Cartesian~ for our ~Writes~:
-#+BEGIN_SRC tut
+#+BEGIN_SRC tut:book
   import cats.Cartesian
 
   implicit val cartesian: Cartesian[Writes] = new Cartesian[Writes] {
@@ -197,8 +197,8 @@ instance of ~Cartesian~ for our ~Writes~:
 
 Do note that our choice of combining the output of the individual ~Writes~
 instances as a ~JsArray~ is quite arbitrary. If we combine more than one
-~Writes~ instances, we get nested arrays:
-#+BEGIN_SRC tut
+~Writes~ instances, our types line up, but we get nested arrays:
+#+BEGIN_SRC tut:book
   implicit val tripleWrites: Writes[(Int, Int, Int)] = 
     (Writes.of[Int] |@| Writes.of[Int] |@| Writes.of[Int]).tupled
 
@@ -209,7 +209,7 @@ This typeclass instance is, in fact, unlawful. Instances of the ~Cartesian~
 typeclass are required to uphold the associativity law - ~(a product b) product
 c~ must be equal to ~a product (b product c)~. In our case, the two formulations
 would result in encoders which produce different JSON arrays:
-#+BEGIN_SRC tut
+#+BEGIN_SRC tut:book
   implicit val intWriter = Writes.of[Int]
 
   implicit val sideA: Writes[(Int, Int, Int)] = 
@@ -229,7 +229,7 @@ would result in encoders which produce different JSON arrays:
 A more principled way of combining encoders is required. We could introspect the
 resulting ~JsValue~ in the composed encoder and flatten the resulting JSON
 array, but what would happen though if we would like to preserve nesting in
-products? This is not an easy problem. I know [[https://twitter.com/fommil][@fommil]] has been tackling the same
+products? This is not an easy problem. [[https://twitter.com/fommil][Sam Halliday]] has been tackling the same
 issues in his [[https://gitlab/fommil/stalactite][scalaz-deriving]] project. We'll follow along to see what solutions
 he'll discover :-)
 
