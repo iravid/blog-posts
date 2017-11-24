@@ -1,5 +1,7 @@
 #+TITLE: On encoders, contravariant functors and contravariant applicatives
 #+DATE: 2017-11-10
+#+SCALA_VERSION: 2.11.11
+#+SCALA_DEPS: org.typelevel::cats:0.9.0,org.typelevel::cats-effect:0.3,com.typesafe.play::play-json:2.5.10,com.iravid::play-json-cats:0.2
 
 Functors and applicatives are very common in the functional programming
 landscape. They arise naturally in various computational contexts - optionality

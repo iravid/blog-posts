@@ -1,5 +1,7 @@
 #+TITLE: Using cats with reactive-kafka
 #+DATE: 2017-07-07
+#+SCALA_VERSION: 2.11.11
+#+SCALA_DEPS: org.typelevel::cats:0.9.0
 
 At [[https://bigpanda.io/][my current job]], we're big fans of using Kafka to replicate data between services.
 In fact, Kafka is the single most important input mechanism for our services: we
