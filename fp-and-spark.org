@@ -360,7 +360,8 @@ decorates the resulting ~Task~ with a logging effect. For simplicity, we'll use
                     s"\t${entry}: ${duration.toMillis.toString}ms"
                 }
                 .toList
-                .mkString("\n")
+                .mkString("\n"),
+              s"\tTotal: ${log.data.values.map(_.toMillis).sum}ms" 
             ).mkString("\n")
           }
         }
