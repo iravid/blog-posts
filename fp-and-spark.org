@@ -584,8 +584,8 @@ written with functional programming. It is admittedly not a complete approach:
 typesafety is still missing from many of the ~DataFrame~ methods and ~nulls~ may
 creep up here and there. But it's definitely an improvement!
 
-I hope you found these examples useful. Feel free to hit me up on twitter
-([[https://twitter.com/itrvd][@itrvd]]) if you've got any questions.
+I hope you found these examples useful. Feel free to hit me up on [[https://twitter.com/itrvd][twitter]] if
+you've got any questions.
 
 /This post was typechecked by [[https://github.com/tpolecat/tut][tut]] on Scala 2.11.11 with Spark 2.2.0, cats
 1.0.0-RC1 and Monix 3.0.0-M2./
