@@ -1,0 +1,77 @@
+#+TITLE: LambdaConf Winter Retreat: a few takeaways
+#+DATE: 2018-01-09
+
+I'm writing this blog post on the plane back home from Vancouver, after a
+wonderful week at snowy Whistler in Canada. I was there for LambdaConf's annual
+Winter Retreat event - a cozy, intimate conference around functional
+programming - and I'd like to share some thoughts on the event in this post.
+Before diving in, however, I can summarize and say that Winter Retreat, in my
+opinion, is one of the best investments a software engineer can make in his
+career.
+
+* Conferences: what are they good for?
+ 
+Full disclosure: I'm a serial almost-conference-attendee. That is, I
+seriously consider going to conferences that interest me (usually around Scala
+and functional programming), but end up passing on them because I feel that I
+can gain most of the benefit by watching the talks afterwards on
+YouTube[fn::which I never do, because it's too time consuming. And yes, I am
+aware of 1.5x. :-)] while skipping the costs of flights, hotels and time
+(billing hourly has downsides...).
+
+So what's different about the Winter Retreat? Well, first off, it's longer. Most
+conferences I usually consider going to are 1-2 days long, and have a tightly
+packed schedule. This usually means that I'm not going to have time to digest
+what I see and learn: it's rapid-fire knowledge being thrown at you. Which is
+cool, admittedly, but it takes me a while to internalize what I'm seeing. The
+retreat, on the other hand, was 3 days and was pretty light on schedule and
+prepared content: 2-3 talks a day and *lots* of time for networking,
+self-learning and internalizing.
+
+Another difference from regular conferences is the level of interaction with the
+speakers. The prepared content at Winter Retreat was designed to be more of an
+interactive discussion between the guides and the audience, rather than proper
+talks. While it is customary for speakers to invite questions and interruptions
+during talks, it is rarely possible to raise in-depth questions (or basic
+ones!), be it because of the large audience size or the fear of derailing the
+speaker's talk and running out of time.
+
+Winter Retreat's schedule and setting worked amazingly well for me in these
+regards. In a way, I feel that it hits the spot in terms of what conferences are
+good for from the attendee's perspective: a break from your regular day-to-day
+schedule to spend time on your professional chops.
+
+* Winter Retreat 2018's setting
+
+The event was held at Whistler, a cool ski town in British Columbia, Canada. I
+don't ski, so I can't say much about the quality of the skiing tracks, but the
+town itself was very cool: great selection of food and good prices. The weather
+was cold, as expected, which sat well with me; one of the things that made me
+want to go to this year's retreat was the thought of snowy weather, hot drinks
+and functional programming. And this thought was very much realized.
+
+Apart from 2-3 talks a day, which I will discuss in a bit, the schedule was
+dominated by office hours: time that could be used to discuss specific subjects
+with the guides and gain from their knowledge, chat and learn from the other
+attendees or just use for some personal hacking and learning. 
+
+** Sleep-eat-learn-lift-repeat
+
+* What you can gain from interactions over a 3-day period
+Since both John de Goes and Kris Nuttycombe are very experienced in FP in Scala,
+the learning potential for me was pretty awesome. I got to spend some very
+meaningful time with both of them, discussing several interesting topics: the
+Bifunctor changes John is making to the Scalaz 8 IO; 
+* Comparing the intellectual interaction level to the day-to-day
+  
+* How should one prepare for such an event
+** Goals (technical, social)
+** Be flexible
+
+* Some random thoughts about the talks given
+
+** Snoyman's raw, down-to-earth, pure engineering approach to Haskell
+
+** How far you can get with applicative functors: Xenomorph, John's testing library
+
+* Summary - can't say that conferences are categorically good, but retreats are for sure
