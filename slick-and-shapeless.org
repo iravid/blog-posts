@@ -1,0 +1,263 @@
+#+TITLE: Safe(r) mappings in Slick with Shapeless
+#+DATE: 2018-02-21
+#+SCALA_VERSION: 2.12.4
+#+SCALA_DEPS: com.typesafe.slick::slick:3.2.1,com.chuusai::shapeless:2.3.3,io.monix::monix-eval:3.0.0-M3
+
+A colleague asked me today if there's any way to reduce the boilerplate around
+mapping common columns in data types and database tables; for example, the ~id~
+column or ~created_at~ and ~updated_at~. We're using Slick, so this post will be
+based around that.
+
+Before diving into the Slick APIs, let's first get a basic question out of the
+way: how should we represent the ~id~ (and other metadata) on our data types
+themselves? We'll use the venerable ~Person~ data type as our running example:
+
+#+BEGIN_SRC scala
+case class Person(name: String, age: Int)
+#+END_SRC
+
+* Modeling metadata fields on case classes
+
+The following straightforward representation first comes to mind:
+#+BEGIN_SRC tut:silent
+case class Person(id: Int, name: String, age: Int)
+#+END_SRC
+
+What's the problem with it? To see it clearly, let's consider a method that
+handles the ~name~ and ~age~ inputs from a user and saves them as a new entry in
+a database:
+#+BEGIN_SRC tut:silent
+  import monix.eval.Task
+
+  trait DB {
+    def insert(person: Person): Task[Unit]
+  }
+
+  def handleUserInput(db: DB, name: String, age: Int): Task[Unit] = 
+    db.insert(Person(???, name, age))
+#+END_SRC
+
+We hit a roadblock pretty early where we must make up a value for the
+~id~ field. Well, no worries- let's just make it optional! We'll also modify the
+~DB~ interface to return the ~Person~ after it has been assigned an ID by the database:
+
+#+BEGIN_SRC tut:silent
+  case class Person(id: Option[Int], name: String, age: Int)
+
+  trait DB {
+    def insert(person: Person): Task[Person]
+  }
+
+  def handleUserInput(db: DB, name: String, age: Int): Task[Person] = 
+    db.insert(Person(None, name, age))
+#+END_SRC
+
+This works, but it's not optimal. Every time we handle an instance of ~Person~,
+we'll need to do an awkward dance with ~id~'s optionaliy; essentially, we're
+making an *invalid* state representable. Which is exactly the opposite of what
+we should try to achieve with a capable type system. The ~id~ field cannot and will
+never be empty.
+
+* Making invalid states unrepresentable
+
+We can try and approach the solution from our desired interface for reading and
+writing data from the database: when we write data, we supply all fields but ~id~,
+and get back both ~id~ and the rest of ~Person~. When we read data, we get back
+an ~Option[Person]~:
+
+#+BEGIN_SRC tut:silent
+  trait DB {
+    def insert(name: String, age: Int): Task[Person]
+    def query(id: Int): Task[Option[Person]]
+  }
+#+END_SRC
+
+This is getting closer, but has the unfortunate effect of replicating all of the
+~Person~ fields on all method signatures requiring interaction with it. Instead,
+we can use this handy representation:
+#+BEGIN_SRC tut:silent
+  case class WithId[T](id: Long, data: T)
+  case class Person(name: String, age: Int)
+
+  type Row = WithId[Person]
+#+END_SRC
+
+We can now model the database interactions safely and correctly:
+#+BEGIN_SRC tut:silent
+  trait DB {
+    def insert(person: Person): Task[WithId[Person]]
+    def query(id: Int): Task[Option[Person]]
+  }
+#+END_SRC
+
+So, back to Slick.
+
+* Functional/relational mapping for WithId[T]
+
+Using this representation carries an unfortunate repetition for mapping the ~id~
+column with the rest of ~Person~'s data. This boilerplate can be higher if there
+are more such database assigned fields. Here's the first version of the Slick
+schema for the ~Person~ table:
+
+#+BEGIN_SRC scala
+  import slick.jdbc.H2Profile.api._
+
+  class People(tag: Tag) extends Table[WithId[Person]](tag, "people") {
+    def id = column[Long]("id", O.AutoInc)
+    def name = column[String]("name")
+    def age = column[Int]("age")
+
+    def * = (id, name, age) <> (
+      { case (id, name, age) => WithId(id, Person(name, age)) },
+      { p: WithId[Person] => Some((p.id, p.data.name, p.data.age)) }
+    )
+  }
+#+END_SRC
+
+We have to manually construct and deconstruct the instance of ~WithId[Person]~
+in the ~*~ projection method, and cannot use the handly ~Person.apply~ and
+~Person.unapply~ methods. Pretty unfortunate and annoying. What if, given a
+tuple ~t: (Long, String, Int)~, we could generate a function call to
+~WithId(t._1, Person(t._2, t._3))~? And conversely, given ~p: WithId[Person]~,
+generate a value ~Some((p.id, p.data.name, p.data.age))~? Extra points if we
+could do this generically forall ~T~.
+
+Whenever I see operations that reassociate tuples, add fields to tuples and
+in general abstract over amount and types of fields, I turn to Shapeless.
+
+* Lessening the projection boilerplate
+
+Our objective is to write generic versions of the following two functions, that
+Slick's API requires when mapping the projection to/from our data types:
+#+BEGIN_SRC tut:silent
+def construct(data: (Long, String, Int)): WithId[Person] = ???
+def deconstruct(p: WithId[Person]): Option[(Long, String, Int)] = ???
+#+END_SRC
+
+The following actions seem feasible for performing ~construct~ generically:
+1. Convert ~(Long, String, Int)~ to an HList - ~Long :: String :: Int :: HNil~.
+2. Split the HList to ~id: Long~ and ~data: String :: Int :: HNil~.
+3. Convert ~data~ back to the ~Person~ case class.
+4. Wrap the created ~Person~ instance in ~WithId(id, _)~.
+
+The inverse, ~deconstruct~, is pretty similar.
+
+Ok! Let's do this. We need 3 typeclasses from shapeless:
+1. ~Generic.Aux[Product, Out]~ will let us move between tuples and HLists;
+2. ~IsHCons.Aux[In, Head, Tail]~ will let us assert that the resulting
+   HList has a ~Long~ up front;
+3. ~Tupler.Aux[In, Tuple]~ will let us go from an HList back to a tuple. 
+
+Here's our generic ~construct~:
+#+BEGIN_SRC tut:silent
+  import shapeless.{ HList, ::, Generic }
+  import shapeless.ops.hlist.{ IsHCons, Tupler }
+
+  def construct[In <: Product, All <: HList, Data <: HList, Out](in: In)(
+    implicit
+    inGen: Generic.Aux[In, All],
+    uncons: IsHCons.Aux[All, Long, Data],
+    outGen: Generic.Aux[Out, Data]
+  ): WithId[Out] = {
+    val all = inGen.to(in)
+
+    val id = uncons.head(all)
+    val data = uncons.tail(all)
+
+    val out = outGen.from(data)
+  
+    WithId(id, out)
+  }
+#+END_SRC
+
+Surprisingly short and succinct. Let's see that it's actually working:
+#+BEGIN_SRC tut
+val personWithId: WithId[Person] = construct((4L, "Person", 42))
+#+END_SRC
+
+The above only works when adding a type annotation to ~personWithId~, otherwise
+~Nothing~ will be inferred for the ~Out~ parameter. In the Slick schema, we
+can't quite conveniently annotate the projection. Instead, we'll use Rob
+Norris's kinda-curried type application trick so we can specify only the ~Out~
+parameter:
+#+BEGIN_SRC tut:silent
+  class ConstructHelper[Out] {
+    def apply[In <: Product, All <: HList, Data <: HList](in: In)(
+      implicit
+      inGen: Generic.Aux[In, All],
+      uncons: IsHCons.Aux[All, Long, Data],
+      outGen: Generic.Aux[Out, Data]
+    ): WithId[Out] = {
+      val all = inGen.to(in)
+
+      val id = uncons.head(all)
+      val data = uncons.tail(all)
+
+      val out = outGen.from(data)
+
+      WithId(id, out)
+    }
+  }
+  def construct[Out] = new ConstructHelper[Out]
+#+END_SRC
+
+And we can now use it as such:
+#+BEGIN_SRC tut
+val personWithId = construct[Person]((4L, "Person", 42))
+#+END_SRC
+
+The inverse operation, ~deconstruct~, is much simpler:
+#+BEGIN_SRC tut:silent
+def deconstruct[In, Data <: HList, Out <: Product](in: WithId[In])(
+  implicit
+  inGen: Generic.Aux[In, Data],
+  dataTupler: Tupler.Aux[Long :: Data, Out]
+): Option[Out] = 
+  Some(dataTupler(in.id :: inGen.to(in.data)))
+#+END_SRC
+
+And is used as such:
+#+BEGIN_SRC tut
+deconstruct(WithId(4L, Person("Person", 42)))
+#+END_SRC
+
+And we can now happily scrap away some boilerplate from our schema definition:
+#+BEGIN_SRC scala
+class People(tag: Tag) extends Table[WithId[Person]](tag, "people") {
+  def id = column[Long]("id", O.AutoInc)
+  def name = column[String]("name")
+  def age = column[Int]("age")
+
+  def * = (id, name, age) <> (
+    construct[Person](_),
+    deconstruct(_: WithId[Person])
+  )
+}
+#+END_SRC
+
+I couldn't get rid of the type annotation on ~deconstruct~, even when I used the
+partially-applied types trick and moved ~In~ to the helper class. Happy to hear
+any ideas anyone has.
+
+We can even move some of the definitions to a base class:
+#+BEGIN_SRC scala
+  abstract class TableWithId[T](tag: Tag, tableName: String)
+    extends Table[WithId[T]](tag, tableName) {
+    def id = column[Long]("id", O.AutoInc)
+  }
+#+END_SRC
+
+Ok, that's it. Here are a few next steps I might pursue, time permitting:
+- pack away both calls to ~construct~ and ~deconstruct~ in a function that
+  returns a tuple of ~(Tuple => Data, Data => Option[Tuple])~;
+- add support for nested case classes - currently this won't work because we
+  need to compute a flat representation of the HList;
+- perhaps add an implicit enrichment to ~TableQuery[People]~ and add a version
+  of ~+=~ that takes a ~Person~ rather than ~WithId[Person]~, which makes more
+  sense.
+
+Hope you'll find this helpful!
+
+This post was typechecked with tut on Scala 2.12.4 with shapeless 2.3.3. The
+parts that use Slick were tested manually because tut refuses to compile them,
+for some reason.
